@@ -7,10 +7,12 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, pipeline
 
+
 DATA_DIR = 'data'
 CSV_PATH = os.path.join(DATA_DIR, 'final_data_aug.csv')
 MODEL_NAME = 'distilbert-base-uncased'
 MODEL_PATH = './bert_emotion_model'
+
 
 def train_bert():
     df = pd.read_csv(CSV_PATH)
@@ -29,10 +31,12 @@ def train_bert():
         def __init__(self, encodings, labels):
             self.encodings = encodings
             self.labels = list(labels)
+
         def __getitem__(self, idx):
             item = {k: torch.tensor(v[idx]) for k, v in self.encodings.items()}
             item['labels'] = torch.tensor(self.labels[idx])
             return item
+
         def __len__(self):
             return len(self.labels)
 
@@ -71,7 +75,8 @@ def train_bert():
     tokenizer.save_pretrained(MODEL_PATH)
     with open(f'{MODEL_PATH}/label_encoder.pkl', 'wb') as f:
         pickle.dump(le, f)
-    print("Model, tokenizer, and label encoder saved to ./bert_emotion_model")
+    print("Model, tokenizer, and label encoder have been saved to ./bert_emotion_model.")
+
 
 def interactive_predict():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
@@ -79,23 +84,25 @@ def interactive_predict():
     classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
     with open(f'{MODEL_PATH}/label_encoder.pkl', 'rb') as f:
         le = pickle.load(f)
-    print("\nReady for Emotion Detection! Type text and hit Enter (type 'exit' to quit)\n")
+
+    print("\nEmotion detection is ready. Type text and press Enter. Type 'exit' to close the program.\n")
     while True:
         user_input = input("Enter text: ")
         if user_input.strip().lower() == 'exit':
-            print("Exiting. Goodbye!")
+            print("Program terminated.")
             break
         if not user_input.strip():
             continue
         result = classifier(user_input)[0]
         pred_id = int(result['label'].replace('LABEL_', '').replace('LABEL', '')) if 'LABEL' in result['label'] else int(result['label'])
         emotion = le.inverse_transform([pred_id])[0]
-        print(f"Predicted Emotion: {emotion}, Confidence: {result['score']:.3f}\n")
+        print(f"Predicted emotion: {emotion}, confidence: {result['score']:.3f}\n")
+
 
 if __name__ == '__main__':
-    print("Choose an action:")
-    print("1. Train BERT Model")
-    print("2. Interactive Emotion Detection")
+    print("Select an action:")
+    print("1. Train BERT model")
+    print("2. Interactive emotion detection")
     choice = input("[1/2]: ").strip()
     if choice == '1':
         train_bert()
