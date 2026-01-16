@@ -3,29 +3,58 @@ import os
 import sys
 import torch
 import pickle
+from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, pipeline
+from transformers import (
+    AutoTokenizer, 
+    AutoModelForSequenceClassification, 
+    Trainer, 
+    TrainingArguments, 
+    pipeline, 
+    AutoConfig
+)
 
-
-DATA_DIR = 'data'
-CSV_PATH = os.path.join(DATA_DIR, 'final_data_aug.csv')
+# --- Configuration ---
+DATA_DIR = Path('data')
+CSV_PATH = DATA_DIR / 'final_data_aug.csv'
 MODEL_NAME = 'distilbert-base-uncased'
-MODEL_PATH = './bert_emotion_model'
-
+MODEL_PATH = Path('./bert_emotion_model')
 
 def train_bert():
+    """Fine-tune the BERT model on the prepared dataset."""
+    if not CSV_PATH.exists():
+        print(f"❌ Error: {CSV_PATH} not found. Please run 'python prepare_data.py' first.")
+        return
+
+    print(f"Loading data from {CSV_PATH}...")
     df = pd.read_csv(CSV_PATH)
+    
+    # Label Encoding
     le = LabelEncoder()
     df['label_id'] = le.fit_transform(df['label'])
+    
+    # Map IDs to labels for the model config
+    label2id = {label: i for i, label in enumerate(le.classes_)}
+    id2label = {i: label for i, label in enumerate(le.classes_)}
+    num_labels = len(le.classes_)
 
+    print(f"Splitting data (Stratified). Labels detected: {list(le.classes_)}")
     X_train, X_val, y_train, y_val = train_test_split(
-        df['text'], df['label_id'], test_size=0.2, random_state=42, stratify=df['label_id']
+        df['text'], df['label_id'], 
+        test_size=0.15, 
+        random_state=42, 
+        stratify=df['label_id']
     )
 
+    print(f"Tokenizing with {MODEL_NAME}...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    train_encodings = tokenizer(list(X_train), truncation=True, padding=True, max_length=128)
-    val_encodings = tokenizer(list(X_val), truncation=True, padding=True, max_length=128)
+    
+    def tokenize_data(texts):
+        return tokenizer(list(texts), truncation=True, padding=True, max_length=128)
+
+    train_encodings = tokenize_data(X_train)
+    val_encodings = tokenize_data(X_val)
 
     class EmotionDataset(torch.utils.data.Dataset):
         def __init__(self, encodings, labels):
@@ -42,23 +71,43 @@ def train_bert():
 
     train_dataset = EmotionDataset(train_encodings, y_train)
     val_dataset = EmotionDataset(val_encodings, y_val)
-    num_labels = len(le.classes_)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=num_labels)
+    
+    # Configure model with labels
+    config = AutoConfig.from_pretrained(
+        MODEL_NAME, 
+        num_labels=num_labels, 
+        label2id=label2id, 
+        id2label=id2label
+    )
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, config=config)
+
+    # Detect device
+    device_name = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Training on device: {device_name}")
 
     training_args = TrainingArguments(
         output_dir='./bert_results',
         num_train_epochs=3,
         per_device_train_batch_size=16,
         per_device_eval_batch_size=32,
-        save_total_limit=1,
+        warmup_steps=100,
+        weight_decay=0.01,
         logging_dir='./logs',
+        logging_steps=50,
+        evaluation_strategy="epoch",
+        save_strategy="epoch",
+        load_best_model_at_end=True,
+        fp16=torch.cuda.is_available()  # Faster training on GPU
     )
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         preds = logits.argmax(axis=-1)
-        from sklearn.metrics import accuracy_score
-        return {'accuracy': accuracy_score(labels, preds)}
+        from sklearn.metrics import accuracy_score, f1_score
+        return {
+            'accuracy': accuracy_score(labels, preds),
+            'f1_weighted': f1_score(labels, preds, average='weighted')
+        }
 
     trainer = Trainer(
         model=model,
@@ -68,42 +117,83 @@ def train_bert():
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
     )
+    
+    print("\n🚀 Starting training process...")
     trainer.train()
+    
+    print("\nFinal evaluation...")
     metrics = trainer.evaluate()
-    print("Validation results:", metrics)
+    print("Validation metrics:", metrics)
+    
+    # Save artifacts
+    MODEL_PATH.mkdir(parents=True, exist_ok=True)
     model.save_pretrained(MODEL_PATH)
     tokenizer.save_pretrained(MODEL_PATH)
-    with open(f'{MODEL_PATH}/label_encoder.pkl', 'wb') as f:
+    
+    with open(MODEL_PATH / 'label_encoder.pkl', 'wb') as f:
         pickle.dump(le, f)
-    print("Model, tokenizer, and label encoder have been saved to ./bert_emotion_model.")
+        
+    print(f"\n✅ Done! Model and artifacts saved to: {MODEL_PATH}")
 
 
 def interactive_predict():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
-    classifier = pipeline("text-classification", model=model, tokenizer=tokenizer)
-    with open(f'{MODEL_PATH}/label_encoder.pkl', 'rb') as f:
+    """Predict emotions from user input via terminal."""
+    if not MODEL_PATH.exists():
+        print(f"❌ Error: Model not found at {MODEL_PATH}. Please run training first.")
+        return
+
+    device = 0 if torch.cuda.is_available() else -1
+    print(f"Using device: {'GPU' if device == 0 else 'CPU'}")
+
+    print("Loading optimized pipeline...")
+    tokenizer = AutoTokenizer.from_pretrained(str(MODEL_PATH))
+    model = AutoModelForSequenceClassification.from_pretrained(str(MODEL_PATH))
+    classifier = pipeline("text-classification", model=model, tokenizer=tokenizer, device=device)
+    
+    with open(MODEL_PATH / 'label_encoder.pkl', 'rb') as f:
         le = pickle.load(f)
 
-    print("\nEmotion detection is ready. Type text and press Enter. Type 'exit' to close the program.\n")
+    print("\n--- Emotion Detection Ready ---")
+    print("Type text and press Enter. Type 'exit' to quit.\n")
+    
     while True:
-        user_input = input("Enter text: ")
-        if user_input.strip().lower() == 'exit':
-            print("Program terminated.")
+        try:
+            user_input = input(">> ").strip()
+        except EOFError:
             break
-        if not user_input.strip():
+            
+        if user_input.lower() == 'exit':
+            print("Goodbye!")
+            break
+        if not user_input:
             continue
+            
         result = classifier(user_input)[0]
-        pred_id = int(result['label'].replace('LABEL_', '').replace('LABEL', '')) if 'LABEL' in result['label'] else int(result['label'])
-        emotion = le.inverse_transform([pred_id])[0]
-        print(f"Predicted emotion: {emotion}, confidence: {result['score']:.3f}\n")
+        label = result['label']
+        score = result['score']
+        
+        # Human-readable mapping fallback
+        if label.startswith('LABEL_'):
+            pred_id = int(label.split('_')[1])
+            emotion = le.inverse_transform([pred_id])[0]
+        elif label in le.classes_:
+            emotion = label
+        else:
+            emotion = label
+
+        print(f"Result: {emotion.upper()} (Confidence: {score:.3f})\n")
 
 
 if __name__ == '__main__':
-    print("Select an action:")
-    print("1. Train BERT model")
-    print("2. Interactive emotion detection")
-    choice = input("[1/2]: ").strip()
+    print("BERT Emotion Pipeline")
+    print("1. Train Model")
+    print("2. Interactive Inference")
+    
+    try:
+        choice = input("Select [1/2]: ").strip()
+    except EOFError:
+        sys.exit(0)
+        
     if choice == '1':
         train_bert()
     elif choice == '2':
