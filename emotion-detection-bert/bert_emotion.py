@@ -25,7 +25,7 @@ MODEL_PATH = SCRIPT_DIR / 'bert_emotion_model'
 def train_bert():
     """Fine-tune the BERT model on the prepared dataset."""
     if not CSV_PATH.exists():
-        print(f"❌ Error: {CSV_PATH} not found. Please run 'python prepare_data.py' first.")
+        print(f"Error: {CSV_PATH} not found. Please run 'python prepare_data.py' first.")
         return
 
     print(f"Loading data from {CSV_PATH}...")
@@ -124,7 +124,7 @@ def train_bert():
         compute_metrics=compute_metrics,
     )
     
-    print("\n🚀 Starting training process...")
+    print("\nStarting training process...")
     trainer.train()
     
     print("\nFinal evaluation...")
@@ -139,13 +139,13 @@ def train_bert():
     with open(MODEL_PATH / 'label_encoder.pkl', 'wb') as f:
         pickle.dump(le, f)
         
-    print(f"\n✅ Done! Model and artifacts saved to: {MODEL_PATH}")
+    print(f"\nDone! Model and artifacts saved to: {MODEL_PATH}")
 
 
 def interactive_predict():
     """Predict emotions from user input via terminal."""
     if not MODEL_PATH.exists():
-        print(f"❌ Error: Model not found at {MODEL_PATH}. Please run training first.")
+        print(f"Error: Model not found at {MODEL_PATH}. Please run training first.")
         return
 
     device = 0 if torch.cuda.is_available() else -1
