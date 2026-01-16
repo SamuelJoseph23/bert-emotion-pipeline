@@ -92,8 +92,8 @@ def train_bert():
         per_device_train_batch_size=16,
         per_device_eval_batch_size=32,
         warmup_steps=100,
+        learning_rate=2e-5,
         weight_decay=0.01,
-        logging_dir='./logs',
         logging_dir='./logs',
         logging_steps=50,
         eval_strategy="epoch",
@@ -105,7 +105,11 @@ def train_bert():
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         preds = logits.argmax(axis=-1)
-        from sklearn.metrics import accuracy_score, f1_score
+        from sklearn.metrics import accuracy_score, f1_score, classification_report
+        
+        # Print classification report to logs for detailed debugging
+        print("\n" + classification_report(labels, preds, target_names=le.classes_))
+        
         return {
             'accuracy': accuracy_score(labels, preds),
             'f1_weighted': f1_score(labels, preds, average='weighted')

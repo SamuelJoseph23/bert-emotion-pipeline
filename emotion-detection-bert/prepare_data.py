@@ -62,17 +62,6 @@ def load_data():
     return pd.concat(dfs, ignore_index=True)
 
 # --- Preprocessing Logic ---
-lemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words('english'))
-# Keep emotional indicators even if they are common words
-emotional_words = {
-    'not', 'no', 'never', 'neither', 'nor', 'none', 'nobody', 'nothing', 'nowhere',
-    'dont', 'doesn', 'didn', 'won', 'wouldn', 'shouldn', 'couldn', 'cant', 'cannot',
-    'ain', 'aren', 'isn', 'wasn', 'weren', 'haven', 'hasn', 'hadn', 'shan', 'very',
-    'really', 'so', 'too', 'happy', 'sad', 'angry', 'love', 'hate', 'scared', 'wow'
-}
-stop_words = stop_words - emotional_words
-
 def clean_text(text):
     text = str(text).lower()
     text = re.sub(r"http\S+|www\S+|https\S+", '', text)  # Links
@@ -81,25 +70,25 @@ def clean_text(text):
     return ' '.join(text.split())
 
 def preprocess_text(text):
-    text = clean_text(text)
-    tokens = word_tokenize(text)
-    processed = []
-    for token in tokens:
-        if len(token) < 2 and token != 'i':
-            continue
-        if token in stop_words:
-            continue
-        processed.append(lemmatizer.lemmatize(token))
-    return ' '.join(processed)
+    """
+    Simplified preprocessing for BERT.
+    BERT (Transformers) works best when it has the full context of a sentence,
+    including stopwords and original word forms.
+    """
+    return clean_text(text)
 
 def handle_negations(text):
-    """Simple heuristic to mark words following a negation."""
+    """
+    Simple heuristic to mark words following a negation.
+    We convert "not happy" to "not NOT_happy" to give the model a clear signal.
+    """
     tokens = text.split()
     result = []
-    neg_words = {'not', 'no', 'never', 'dont', 'doesn', 'didn', 'won', 'cant', 'cannot'}
+    neg_words = {'not', 'no', 'never', 'dont', 'doesn', 'didn', 'won', 'cant', 'cannot', "don't", "doesn't"}
     negated = False
     for token in tokens:
-        if token in neg_words:
+        clean_token = token.strip(".,!?:;")
+        if clean_token in neg_words:
             result.append(token)
             negated = True
         elif negated:
@@ -111,7 +100,7 @@ def handle_negations(text):
 
 # --- Main Pipeline Execution ---
 def main():
-    print("Starting data preparation pipeline...")
+    print("Starting data preparation pipeline (Simplified for BERT)...")
     df = load_data()
 
     # Column normalization
@@ -137,7 +126,7 @@ def main():
         lbl_map = {0: 'sadness', 1: 'joy', 2: 'love', 3: 'anger', 4: 'fear', 5: 'surprise'}
         df['label'] = df['label'].map(lbl_map)
 
-    print("Preprocessing text data...")
+    print("Cleaning text data...")
     df['text'] = df['text'].apply(preprocess_text).apply(handle_negations)
     df = df[df['text'].str.strip() != '']
 
@@ -150,6 +139,7 @@ def main():
         base = str(label).lower()
         aug_rows.extend([
             {'text': f"i am not {base}", 'label': 'neutral'},
+            {'text': f"i do not feel {base}", 'label': 'neutral'},
             {'text': f"i don't feel {base}", 'label': 'neutral'},
             {'text': f"definitely not {base}", 'label': 'neutral'}
         ])
