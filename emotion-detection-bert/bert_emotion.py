@@ -16,10 +16,11 @@ from transformers import (
 )
 
 # --- Configuration ---
-DATA_DIR = Path('data')
+SCRIPT_DIR = Path(__file__).parent.absolute()
+DATA_DIR = SCRIPT_DIR / 'data'
 CSV_PATH = DATA_DIR / 'final_data_aug.csv'
 MODEL_NAME = 'distilbert-base-uncased'
-MODEL_PATH = Path('./bert_emotion_model')
+MODEL_PATH = SCRIPT_DIR / 'bert_emotion_model'
 
 def train_bert():
     """Fine-tune the BERT model on the prepared dataset."""
@@ -93,8 +94,9 @@ def train_bert():
         warmup_steps=100,
         weight_decay=0.01,
         logging_dir='./logs',
+        logging_dir='./logs',
         logging_steps=50,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         fp16=torch.cuda.is_available()  # Faster training on GPU

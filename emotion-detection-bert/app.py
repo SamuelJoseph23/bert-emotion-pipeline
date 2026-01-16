@@ -32,7 +32,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Constants
-MODEL_PATH = Path('./bert_emotion_model')
+SCRIPT_DIR = Path(__file__).parent.absolute()
+MODEL_PATH = SCRIPT_DIR / 'bert_emotion_model'
 
 @st.cache_resource
 def load_pipeline():

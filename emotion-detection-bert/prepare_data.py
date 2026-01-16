@@ -15,7 +15,7 @@ REQUIRED_CSVS = ['train.csv', 'test.csv', 'val.csv']
 # --- NLTK Setup ---
 def download_nltk_data():
     """Automate NLTK resource downloading."""
-    resources = ['punkt', 'stopwords', 'wordnet', 'omw-1.4']
+    resources = ['punkt', 'punkt_tab', 'stopwords', 'wordnet', 'omw-1.4']
     for res in resources:
         try:
             # Check if resource is already available
